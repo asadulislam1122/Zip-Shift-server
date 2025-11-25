@@ -29,12 +29,23 @@ async function run() {
     const db = client.db("zap_shift_db");
     const parcelCollection = db.collection("parcels");
     // parcel api
-    app.get("/parcels", async (req, res) => {});
+    app.get("/parcels", async (req, res) => {
+      const query = {};
+      const { email } = req.query;
+      if (email) {
+        query.senderEmail = email;
+      }
+      const cursor = parcelCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+    // post api
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;
       const result = await parcelCollection.insertOne(parcel);
       res.send(result);
     });
+    //
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged Zap_Shift-USer your deployment. You successfully connected to MongoDB!"
