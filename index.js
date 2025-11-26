@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 const app = express();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 // maddileWare
 app.use(express.json());
@@ -35,16 +35,33 @@ async function run() {
       if (email) {
         query.senderEmail = email;
       }
-      const cursor = parcelCollection.find(query);
+      const options = { sort: { createAt: -1 } };
+      const cursor = parcelCollection.find(query, options);
       const result = await cursor.toArray();
+      res.send(result);
+    });
+    // get api akta id ar jonno ********************
+    app.get("/parcels/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await parcelCollection.findOne(query);
       res.send(result);
     });
     // post api
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;
+      parcel.createAt = new Date();
       const result = await parcelCollection.insertOne(parcel);
       res.send(result);
     });
+    // delete api
+    app.delete("/parcels/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await parcelCollection.deleteOne(query);
+      res.send(result);
+    });
+
     //
     await client.db("admin").command({ ping: 1 });
     console.log(
