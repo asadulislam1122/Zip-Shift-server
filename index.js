@@ -7,7 +7,8 @@ const port = process.env.PORT || 3000;
 // maddileWare
 app.use(express.json());
 app.use(cors());
-//
+//payment Method
+const stripe = require("stripe")(process.env.PAYMENT);
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster-first-server-ap.bcgcgzv.mongodb.net/?appName=Cluster-first-server-app`;
 
@@ -61,7 +62,34 @@ async function run() {
       const result = await parcelCollection.deleteOne(query);
       res.send(result);
     });
-
+    // payment Related api
+    app.post("/create-checkout-session", async (req, res) => {
+      const paymentInfo = req.body;
+      const amount = parseInt(paymentInfo.cost) * 100;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "USD",
+              unit_amount: amount,
+              product_data: {
+                name: paymentInfo.parcelName,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        customer_email: paymentInfo.senderEmail,
+        mode: "payment",
+        metadata: {
+          parcelId: paymentInfo.parcelId,
+        },
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
+        cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+      });
+      console.log(session);
+      res.send({ url: session.url });
+    });
     //
     await client.db("admin").command({ ping: 1 });
     console.log(
