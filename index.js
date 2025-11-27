@@ -4,6 +4,17 @@ require("dotenv").config();
 const app = express();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
+//
+const crypto = require("crypto");
+
+function generateTrackingId() {
+  const prefix = "PRCL";
+  const date = new Date().toISOString().split("T")[0].replace(/-/g, "");
+
+  const random = crypto.randomBytes(3).toString("hex").toUpperCase(); // 6 hex chars
+
+  return `${prefix}-${date}-${random}`;
+}
 // maddileWare
 app.use(express.json());
 app.use(cors());
@@ -29,6 +40,7 @@ async function run() {
     //
     const db = client.db("zap_shift_db");
     const parcelCollection = db.collection("parcels");
+    const paymentCollection = db.collection("payments");
     // parcel api
     app.get("/parcels", async (req, res) => {
       const query = {};
@@ -83,12 +95,51 @@ async function run() {
         mode: "payment",
         metadata: {
           parcelId: paymentInfo.parcelId,
+          parcelName: paymentInfo.parcelName,
         },
-        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
       });
       console.log(session);
       res.send({ url: session.url });
+    });
+    //payment Success
+    app.patch("/payment-success", async (req, res) => {
+      const sessionId = req.query.session_id;
+      // console.log("session id", sessionId);
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      console.log("session retrieve", session);
+      if (session.payment_status === "paid") {
+        const id = session.metadata.parcelId;
+        const query = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            paymentStatus: "paid",
+            trackingId: generateTrackingId(),
+          },
+        };
+        const result = await parcelCollection.updateOne(query, update);
+        const payment = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          parcelId: session.metadata.parcelId,
+          parcelName: session.metadata.parcelName,
+          transactionId: session.payment_intent,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+        };
+        if (session.payment_status === "paid") {
+          const resultPayment = await paymentCollection.insertOne(payment);
+          res.send({
+            success: true,
+            modifyParcel: result,
+            paymentInfo: resultPayment,
+          });
+        }
+        // res.send(result);
+      }
+      res.send({ success: false });
     });
     //
     await client.db("admin").command({ ping: 1 });
