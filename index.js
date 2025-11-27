@@ -108,14 +108,18 @@ async function run() {
       const sessionId = req.query.session_id;
       // console.log("session id", sessionId);
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-      console.log("session retrieve", session);
+
+      // console.log("session retrieve", session);
+      //
+      const trackingId = generateTrackingId();
+      //
       if (session.payment_status === "paid") {
         const id = session.metadata.parcelId;
         const query = { _id: new ObjectId(id) };
         const update = {
           $set: {
             paymentStatus: "paid",
-            trackingId: generateTrackingId(),
+            trackingId: trackingId,
           },
         };
         const result = await parcelCollection.updateOne(query, update);
@@ -134,6 +138,8 @@ async function run() {
           res.send({
             success: true,
             modifyParcel: result,
+            trackingId: trackingId,
+            transactionId: session.payment_intent,
             paymentInfo: resultPayment,
           });
         }
