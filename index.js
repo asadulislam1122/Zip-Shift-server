@@ -28,13 +28,21 @@ function generateTrackingId() {
 app.use(express.json());
 app.use(cors());
 
-const verifyFBToken = (req, res, next) => {
-  console.log("headers in the middileWare", req.headers.authorization);
+const verifyFBToken = async (req, res, next) => {
+  // console.log("headers in the middileWare", req.headers.authorization);
   const token = req.headers.authorization;
   if (!token) {
     return res.status(401).send({ message: "unauthorized access" });
   }
-  next();
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    // console.log("decoded in the token", decoded);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
 };
 //payment Method
 const stripe = require("stripe")(process.env.PAYMENT);
@@ -57,8 +65,19 @@ async function run() {
     // Send a ping to confirm a successful connection
     //
     const db = client.db("zap_shift_db");
+    const userCollection = db.collection("users");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
+    // user related api
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      user.role = "user";
+      user.createAt = new Date();
+      const result = await userCollection.insertOne(user);
+      res.send(result);
+    });
+    //
+
     // parcel api
     app.get("/parcels", async (req, res) => {
       const query = {};
@@ -118,7 +137,7 @@ async function run() {
         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
       });
-      console.log(session);
+      // console.log(session);
       res.send({ url: session.url });
     });
     //payment Success
@@ -186,8 +205,12 @@ async function run() {
       // console.log(req.headers);
       if (email) {
         query.customerEmail = email;
+        // check email adress
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
       }
-      const cursor = paymentCollection.find(query);
+      const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
