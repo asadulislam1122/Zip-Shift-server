@@ -6,6 +6,15 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 //
 const crypto = require("crypto");
+// fairbase admin key
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./zip-shift-admin-key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+//
 
 function generateTrackingId() {
   const prefix = "PRCL";
@@ -18,6 +27,15 @@ function generateTrackingId() {
 // maddileWare
 app.use(express.json());
 app.use(cors());
+
+const verifyFBToken = (req, res, next) => {
+  console.log("headers in the middileWare", req.headers.authorization);
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+  next();
+};
 //payment Method
 const stripe = require("stripe")(process.env.PAYMENT);
 
@@ -110,6 +128,17 @@ async function run() {
       const session = await stripe.checkout.sessions.retrieve(sessionId);
 
       // console.log("session retrieve", session);
+      const transactionId = session.payment_intent;
+      const query = { transactionId: transactionId };
+      const paymentExist = await paymentCollection.findOne(query);
+      // console.log(paymentExist);
+      if (paymentExist) {
+        return res.send({
+          message: "already exists",
+          transactionId,
+          trackingId: paymentExist.trackingId,
+        });
+      }
       //
       const trackingId = generateTrackingId();
       //
@@ -132,9 +161,11 @@ async function run() {
           transactionId: session.payment_intent,
           paymentStatus: session.payment_status,
           paidAt: new Date(),
+          trackingId: trackingId,
         };
         if (session.payment_status === "paid") {
           const resultPayment = await paymentCollection.insertOne(payment);
+          // return
           res.send({
             success: true,
             modifyParcel: result,
@@ -145,7 +176,20 @@ async function run() {
         }
         // res.send(result);
       }
+      // return
       res.send({ success: false });
+    });
+    // payment related api
+    app.get("/payments", verifyFBToken, async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+      // console.log(req.headers);
+      if (email) {
+        query.customerEmail = email;
+      }
+      const cursor = paymentCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
     });
     //
     await client.db("admin").command({ ping: 1 });
