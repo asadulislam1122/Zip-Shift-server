@@ -66,13 +66,63 @@ async function run() {
     //
     const db = client.db("zap_shift_db");
     const userCollection = db.collection("users");
+    const riderCollection = db.collection("riders");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
+    // riders related api
+    app.post("/riders", async (req, res) => {
+      const rider = req.body;
+      rider.status = "pending";
+      rider.createdAt = new Date();
+      const result = await riderCollection.insertOne(rider);
+      res.send(result);
+    });
+    // get
+    app.get("/riders", async (req, res) => {
+      const query = {};
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+      const cursor = riderCollection.find(query).sort({ createdAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+    // rider accept and approvel
+    app.patch("/riders/:id", verifyFBToken, async (req, res) => {
+      const status = req.body.status;
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          status: status,
+        },
+      };
+      const result = await riderCollection.updateOne(query, updatedDoc);
+      if (status === "approved") {
+        const email = req.body.email;
+        const userQuery = { email };
+        const updateUser = {
+          $set: {
+            role: "rider",
+          },
+        };
+        const userResult = await userCollection.updateOne(
+          userQuery,
+          updateUser
+        );
+      }
+      res.send(result);
+    });
     // user related api
     app.post("/users", async (req, res) => {
       const user = req.body;
       user.role = "user";
       user.createAt = new Date();
+      const email = user.email;
+      const userExits = await userCollection.findOne({ email });
+      if (userExits) {
+        return res.send({ message: "user exits" });
+      }
       const result = await userCollection.insertOne(user);
       res.send(result);
     });
