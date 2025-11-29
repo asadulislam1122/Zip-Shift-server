@@ -69,6 +69,16 @@ async function run() {
     const riderCollection = db.collection("riders");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
+    // middele more with database access
+    const verifayAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
     // riders related api
     app.post("/riders", async (req, res) => {
       const rider = req.body;
@@ -88,7 +98,7 @@ async function run() {
       res.send(result);
     });
     // rider accept and approvel
-    app.patch("/riders/:id", verifyFBToken, async (req, res) => {
+    app.patch("/riders/:id", verifyFBToken, verifayAdmin, async (req, res) => {
       const status = req.body.status;
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -114,6 +124,40 @@ async function run() {
       res.send(result);
     });
     // user related api
+    app.get("/users", verifyFBToken, async (req, res) => {
+      const cursor = userCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+    //patch
+    app.patch(
+      "/users/:id/role",
+      verifyFBToken,
+      verifayAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const roleInfo = req.body;
+        const query = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: {
+            role: roleInfo.role,
+          },
+        };
+        const result = await userCollection.updateOne(query, updatedDoc);
+        res.send(result);
+      }
+    );
+    //
+    app.get("/users/:id", async (req, res) => {});
+    //
+    app.get("/users/:email/role", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+      res.send({ role: user?.role || "user" });
+    });
+
+    //
     app.post("/users", async (req, res) => {
       const user = req.body;
       user.role = "user";
