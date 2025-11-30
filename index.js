@@ -105,8 +105,15 @@ async function run() {
       const updatedDoc = {
         $set: {
           status: status,
+          // workStatus: "available",
         },
       };
+      // শুধুমাত্র APPROVED হলে workStatus যুক্ত হবে
+      if (status === "approved") {
+        updatedDoc.$set.workStatus = "available";
+      } else {
+        updatedDoc.$set.workStatus = "none"; // আপনি চাইলে null/blocked/string কিছু দিতে পারেন
+      }
       const result = await riderCollection.updateOne(query, updatedDoc);
       if (status === "approved") {
         const email = req.body.email;
@@ -125,7 +132,19 @@ async function run() {
     });
     // user related api
     app.get("/users", verifyFBToken, async (req, res) => {
-      const cursor = userCollection.find();
+      const searchText = req.query.searchText;
+      const query = {};
+      if (searchText) {
+        // query.displayName = { $regex: searchText, $options: "i" };
+        query.$or = [
+          { displayName: { $regex: searchText, $options: "i" } },
+          { email: { $regex: searchText, $options: "i" } },
+        ];
+      }
+      const cursor = userCollection
+        .find(query)
+        .limit(10)
+        .sort({ createAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -175,9 +194,12 @@ async function run() {
     // parcel api
     app.get("/parcels", async (req, res) => {
       const query = {};
-      const { email } = req.query;
+      const { email, deliveryStatus } = req.query;
       if (email) {
         query.senderEmail = email;
+      }
+      if (deliveryStatus) {
+        query.deliveryStatus = deliveryStatus;
       }
       const options = { sort: { createAt: -1 } };
       const cursor = parcelCollection.find(query, options);
@@ -261,6 +283,7 @@ async function run() {
         const update = {
           $set: {
             paymentStatus: "paid",
+            deliveryStatus: "pending-pickup",
             trackingId: trackingId,
           },
         };
