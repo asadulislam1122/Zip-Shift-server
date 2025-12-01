@@ -89,9 +89,16 @@ async function run() {
     });
     // get
     app.get("/riders", async (req, res) => {
+      const { status, districts, workStatus } = req.query;
       const query = {};
-      if (req.query.status) {
-        query.status = req.query.status;
+      if (status) {
+        query.status = status;
+      }
+      if (districts) {
+        query.districts = districts;
+      }
+      if (workStatus) {
+        query.workStatus = workStatus;
       }
       const cursor = riderCollection.find(query).sort({ createdAt: -1 });
       const result = await cursor.toArray();
@@ -206,6 +213,20 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
+    //
+    app.get("/paecels/riders", async (req, res) => {
+      const { riderEmail, deliveryStatus } = req.query;
+      const query = {};
+      if (riderEmail) {
+        query.riderEmail = riderEmail;
+      }
+      if (deliveryStatus) {
+        query.deliveryStatus = { $in: ["driver_assigned", "rider_arriving"] };
+      }
+      const cursor = parcelCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
     // get api akta id ar jonno ********************
     app.get("/parcels/:id", async (req, res) => {
       const id = req.params.id;
@@ -225,6 +246,52 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await parcelCollection.deleteOne(query);
+      res.send(result);
+    });
+    //
+    //
+    //
+    // parcel patch
+    app.patch("/parcels/:id", async (req, res) => {
+      const { riderName, riderEmail, riderId } = req.body;
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          deliveryStatus: "driver_assigned",
+          riderId: riderId,
+          riderName: riderName,
+          riderEmail: riderEmail,
+        },
+      };
+      const result = await parcelCollection.updateOne(query, updatedDoc);
+
+      // update rider infrmation
+      const riderQuery = { _id: new ObjectId(riderId) };
+      const riderUpdateDocs = {
+        $set: {
+          workStatus: "in_delivery ✔",
+        },
+      };
+      const riderResult = await riderCollection.updateOne(
+        riderQuery,
+        riderUpdateDocs
+      );
+      res.send(riderResult);
+    });
+
+    // assignDelivary
+    app.patch("/parcels/:id/status", async (req, res) => {
+      const { deliveryStatus } = req.body;
+      const query = {
+        _id: new ObjectId(req.params.id),
+      };
+      const updatedDoc = {
+        $set: {
+          deliveryStatus: deliveryStatus,
+        },
+      };
+      const result = await parcelCollection.updateOne(query, updatedDoc);
       res.send(result);
     });
     // payment Related api
