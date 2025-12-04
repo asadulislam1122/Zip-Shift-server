@@ -69,6 +69,7 @@ async function run() {
     const riderCollection = db.collection("riders");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
+    const trackingsCollection = db.collection("trackings");
     // middele more with database access
     const verifayAdmin = async (req, res, next) => {
       const email = req.decoded_email;
@@ -78,6 +79,18 @@ async function run() {
         return res.status(403).send({ message: "forbidden access" });
       }
       next();
+    };
+
+    // log trakings
+    const logTracking = async (trackingId, status) => {
+      const log = {
+        trackingId,
+        status,
+        details: status.split("-").join(" "),
+        createdAt: new Date(),
+      };
+      const result = await trackingsCollection.insertOne(log);
+      return result;
     };
     // riders related api
     app.post("/riders", async (req, res) => {
@@ -220,9 +233,11 @@ async function run() {
       if (riderEmail) {
         query.riderEmail = riderEmail;
       }
-      if (deliveryStatus) {
+      if (deliveryStatus !== "parcel_delivered ✅") {
         // query.deliveryStatus = { $in: ["driver_assigned", "rider_arriving"] };
-        query.deliveryStatus = { $nin: ["parcel_delivered"] };
+        query.deliveryStatus = { $nin: ["parcel_delivered ✅"] };
+      } else {
+        query.deliveryStatus = deliveryStatus;
       }
       const cursor = parcelCollection.find(query);
       const result = await cursor.toArray();
@@ -254,7 +269,7 @@ async function run() {
     //
     // parcel patch
     app.patch("/parcels/:id", async (req, res) => {
-      const { riderName, riderEmail, riderId } = req.body;
+      const { riderName, riderEmail, riderId, trackingId } = req.body;
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const updatedDoc = {
@@ -278,12 +293,15 @@ async function run() {
         riderQuery,
         riderUpdateDocs
       );
+      // oooooooooooooooooooooooooooooooooooooooooooooooooooooo
+      // log traking
+      logTracking(trackingId, "driver_assigned");
       res.send(riderResult);
     });
 
     // assignDelivary
     app.patch("/parcels/:id/status", async (req, res) => {
-      const { deliveryStatus } = req.body;
+      const { deliveryStatus, riderId, trackingId } = req.body;
       const query = {
         _id: new ObjectId(req.params.id),
       };
@@ -292,7 +310,21 @@ async function run() {
           deliveryStatus: deliveryStatus,
         },
       };
+      if (deliveryStatus === "parcel_delivered ✅") {
+        const riderQuery = { _id: new ObjectId(riderId) };
+        const riderUpdateDocs = {
+          $set: {
+            workStatus: "available",
+          },
+        };
+        const riderResult = await riderCollection.updateOne(
+          riderQuery,
+          riderUpdateDocs
+        );
+      }
       const result = await parcelCollection.updateOne(query, updatedDoc);
+      // log traking
+      logTracking(trackingId, deliveryStatus);
       res.send(result);
     });
     // payment Related api
@@ -369,8 +401,9 @@ async function run() {
         };
         if (session.payment_status === "paid") {
           const resultPayment = await paymentCollection.insertOne(payment);
+          logTracking(trackingId, "pending-pickup");
           // return
-          res.send({
+          return res.send({
             success: true,
             modifyParcel: result,
             trackingId: trackingId,
@@ -381,7 +414,7 @@ async function run() {
         // res.send(result);
       }
       // return
-      res.send({ success: false });
+      return res.send({ success: false });
     });
     // payment related api
     app.get("/payments", verifyFBToken, async (req, res) => {
@@ -400,6 +433,14 @@ async function run() {
       res.send(result);
     });
     //
+    // tracking related apui
+
+    app.get("/trackings/:trackingId/logs", async (req, res) => {
+      const trackingId = req.params.trackingId;
+      const query = { trackingId };
+      const result = await trackingsCollection.find(query).toArray();
+      res.send(result);
+    });
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged Zap_Shift-USer your deployment. You successfully connected to MongoDB!"
